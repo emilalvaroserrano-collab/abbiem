@@ -7,7 +7,7 @@ import { n as toast } from "../_libs/sonner.mjs";
 import { n as create, t as persist } from "../_libs/zustand.mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-C-Vs7Cu2.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-CF3NgYDK.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 var createSsrRpc = (functionId) => {
@@ -1028,35 +1028,45 @@ function Messenger() {
 				board: leadsQ.data ?? null,
 				error: leadsQ.error instanceof Error ? leadsQ.error.message : null,
 				loading: leadsQ.isLoading || leadsQ.isFetching,
+				link: waQ.data ?? null,
 				onClose: () => setLeadsOpen(false),
-				onReply: async (pageId, recipientId, text, phone) => {
-					const result = await sendReply({ data: {
-						pageId,
-						recipientId,
-						text
-					} });
-					if (result.ok) return {
-						ok: true,
-						message: result.message
-					};
-					if (result.extra?.reason === "window" && phone && phone.replace(/\D/g, "").length >= 8) {
-						const wa = await sendWhatsAppMessage({ data: {
-							to: phone,
+				onReply: async (pageId, recipientId, text, phone, closed) => {
+					if (!closed) {
+						const result = await sendReply({ data: {
+							pageId,
+							recipientId,
 							text
 						} });
-						return wa.ok ? {
+						if (result.ok) return {
 							ok: true,
-							message: wa.message
-						} : {
+							message: result.message
+						};
+						if (result.extra?.reason !== "window") return {
 							ok: false,
-							message: wa.message,
-							window: true
+							message: result.message
 						};
 					}
-					return {
+					if (phone.replace(/\D/g, "").length < 8) return {
 						ok: false,
-						message: result.message,
-						window: result.extra?.reason === "window"
+						needsPhone: true,
+						message: "Messenger closed this chat. Add their WhatsApp number — it sends from your phone."
+					};
+					if (waQ.data?.status !== "connected") return {
+						ok: false,
+						needsLink: true,
+						message: "Scan the code. This message sends the moment WhatsApp links."
+					};
+					const wa = await sendWhatsAppMessage({ data: {
+						to: phone,
+						text
+					} });
+					return wa.ok ? {
+						ok: true,
+						message: wa.message
+					} : {
+						ok: false,
+						needsPhone: true,
+						message: wa.message
 					};
 				}
 			}),
@@ -1393,7 +1403,7 @@ var LEAD_FILTERS = [
 		label: "Audiences"
 	}
 ];
-function LeadsDrawer({ board, error, loading, onClose, onReply }) {
+function LeadsDrawer({ board, error, loading, link, onClose, onReply }) {
 	const [filter, setFilter] = (0, import_react.useState)("all");
 	const [q, setQ] = (0, import_react.useState)("");
 	const [openId, setOpenId] = (0, import_react.useState)(null);
@@ -1503,7 +1513,9 @@ function LeadsDrawer({ board, error, loading, onClose, onReply }) {
 									]
 								}), expanded && canReply ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LeadReply, {
 									name: l.name,
-									onSend: (text, phone) => onReply(l.pageId, l.participantId, text, phone)
+									closed: threadClosed(l.when),
+									link,
+									onSend: (text, phone) => onReply(l.pageId, l.participantId, text, phone, threadClosed(l.when))
 								}) : expanded && l.source === "audience" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 									className: "mt-2 text-xs leading-relaxed text-faint",
 									children: "Use this interest in a paused Meta ads campaign. Ask Abbie to create one."
@@ -1519,29 +1531,57 @@ function LeadsDrawer({ board, error, loading, onClose, onReply }) {
 		})
 	});
 }
-function LeadReply({ name, onSend }) {
+function threadClosed(when) {
+	if (!when) return true;
+	const t = new Date(when).getTime();
+	if (Number.isNaN(t)) return true;
+	return Date.now() - t > 828e5;
+}
+function LeadReply({ name, closed, link, onSend }) {
 	const [text, setText] = (0, import_react.useState)("");
 	const [phone, setPhone] = (0, import_react.useState)("");
 	const [sending, setSending] = (0, import_react.useState)(false);
 	const [note, setNote] = (0, import_react.useState)(null);
-	const [needsPhone, setNeedsPhone] = (0, import_react.useState)(false);
+	const [showPhone, setShowPhone] = (0, import_react.useState)(closed);
+	const [showLink, setShowLink] = (0, import_react.useState)(false);
+	const armed = (0, import_react.useRef)(false);
 	const first = name.split(" ")[0] || name;
+	const linked = link?.status === "connected";
+	async function deliver(body, number) {
+		setSending(true);
+		setNote(null);
+		try {
+			const result = await onSend(body, number);
+			setNote(result.message);
+			setShowPhone(closed || Boolean(result.needsPhone) || Boolean(result.needsLink));
+			setShowLink(Boolean(result.needsLink));
+			armed.current = Boolean(result.needsLink);
+			if (result.ok) {
+				setText("");
+				armed.current = false;
+				toast.success(result.message);
+			}
+		} catch {
+			setNote("Could not send. Try again.");
+		} finally {
+			setSending(false);
+		}
+	}
+	(0, import_react.useEffect)(() => {
+		if (!armed.current || !linked || sending) return;
+		const body = text.trim();
+		const number = phone.trim();
+		if (!body || number.replace(/\D/g, "").length < 8) return;
+		armed.current = false;
+		deliver(body, number);
+	}, [linked]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
 		className: "mt-3 space-y-2",
 		onSubmit: (e) => {
 			e.preventDefault();
 			const body = text.trim();
-			if (!body) return;
-			setSending(true);
-			setNote(null);
-			onSend(body, phone).then((result) => {
-				setNote(result.message);
-				setNeedsPhone(Boolean(result.window));
-				if (result.ok) {
-					setText("");
-					toast.success(result.message);
-				}
-			}).catch(() => setNote("Could not send. Try again.")).finally(() => setSending(false));
+			if (!body || sending) return;
+			deliver(body, phone);
 		},
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -1558,12 +1598,35 @@ function LeadReply({ name, onSend }) {
 					children: sending ? "Sending…" : "Send"
 				})]
 			}),
-			needsPhone ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
+			showPhone ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
 				value: phone,
 				onChange: (e) => setPhone(e.target.value),
-				placeholder: "WhatsApp number, country code",
+				placeholder: "Their WhatsApp number",
 				inputMode: "tel",
 				className: "h-11"
+			}) : null,
+			showLink && !linked ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "rounded-md bg-subtle px-3 py-3",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "text-xs leading-relaxed text-muted",
+						children: "WhatsApp → Linked devices → Link a device"
+					}),
+					link?.qrDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+						src: link.qrDataUrl,
+						alt: "WhatsApp QR code",
+						width: 224,
+						height: 224,
+						className: "mx-auto mt-3 size-44 rounded-md bg-accent-fg p-2"
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "mt-2 text-xs text-faint",
+						children: link?.status === "connecting" ? "Preparing the code…" : "Starting WhatsApp…"
+					}),
+					link?.pairingCode ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "mt-2 text-center font-mono text-lg tracking-widest text-fg",
+						children: link.pairingCode
+					}) : null
+				]
 			}) : null,
 			note ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 				className: "text-xs leading-relaxed text-muted",

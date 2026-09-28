@@ -622,21 +622,36 @@ export function Messenger() {
           board={leadsQ.data ?? null}
           error={leadsQ.error instanceof Error ? leadsQ.error.message : null}
           loading={leadsQ.isLoading || leadsQ.isFetching}
+          link={waQ.data ?? null}
           onClose={() => setLeadsOpen(false)}
-          onReply={async (pageId, recipientId, text, phone) => {
-            const result = await sendReply({ data: { pageId, recipientId, text } });
-            if (result.ok) return { ok: true, message: result.message };
-            if (result.extra?.reason === "window" && phone && phone.replace(/\D/g, "").length >= 8) {
-              const wa = await sendWhatsAppMessage({ data: { to: phone, text } });
-              return wa.ok
-                ? { ok: true, message: wa.message }
-                : { ok: false, message: wa.message, window: true };
+          onReply={async (pageId, recipientId, text, phone, closed) => {
+            if (!closed) {
+              const result = await sendReply({ data: { pageId, recipientId, text } });
+              if (result.ok) return { ok: true, message: result.message };
+              if (result.extra?.reason !== "window") {
+                return { ok: false, message: result.message };
+              }
             }
-            return {
-              ok: false,
-              message: result.message,
-              window: result.extra?.reason === "window",
-            };
+            const digits = phone.replace(/\D/g, "");
+            if (digits.length < 8) {
+              return {
+                ok: false,
+                needsPhone: true,
+                message:
+                  "Messenger closed this chat. Add their WhatsApp number — it sends from your phone.",
+              };
+            }
+            if (waQ.data?.status !== "connected") {
+              return {
+                ok: false,
+                needsLink: true,
+                message: "Scan the code. This message sends the moment WhatsApp links.",
+              };
+            }
+            const wa = await sendWhatsAppMessage({ data: { to: phone, text } });
+            return wa.ok
+              ? { ok: true, message: wa.message }
+              : { ok: false, needsPhone: true, message: wa.message };
           }}
         />
       )}
@@ -1001,19 +1016,22 @@ function LeadsDrawer({
   board,
   error,
   loading,
+  link,
   onClose,
   onReply,
 }: {
   board: { leads: LeadHit[]; notes: string[] } | null;
   error: string | null;
   loading: boolean;
+  link: WaStatus | null;
   onClose: () => void;
   onReply: (
     pageId: string,
     recipientId: string,
     text: string,
     phone: string,
-  ) => Promise<{ ok: boolean; message: string; window?: boolean }>;
+    closed: boolean,
+  ) => Promise<{ ok: boolean; message: string; needsPhone?: boolean; needsLink?: boolean }>;
 }) {
   const [filter, setFilter] = useState<"all" | LeadSource>("all");
   const [q, setQ] = useState("");
@@ -1114,7 +1132,11 @@ function LeadsDrawer({
                     {expanded && canReply ? (
                       <LeadReply
                         name={l.name}
-                        onSend={(text, phone) => onReply(l.pageId, l.participantId!, text, phone)}
+                        closed={threadClosed(l.when)}
+                        link={link}
+                        onSend={(text, phone) =>
+                          onReply(l.pageId, l.participantId!, text, phone, threadClosed(l.when))
+                        }
                       />
                     ) : expanded && l.source === "audience" ? (
                       <p className="mt-2 text-xs leading-relaxed text-faint">
@@ -1135,19 +1157,68 @@ function LeadsDrawer({
   );
 }
 
+function threadClosed(when: string | null) {
+  if (!when) return true;
+  const t = new Date(when).getTime();
+  if (Number.isNaN(t)) return true;
+  return Date.now() - t > 23 * 60 * 60 * 1000;
+}
+
 function LeadReply({
   name,
+  closed,
+  link,
   onSend,
 }: {
   name: string;
-  onSend: (text: string, phone: string) => Promise<{ ok: boolean; message: string; window?: boolean }>;
+  closed: boolean;
+  link: WaStatus | null;
+  onSend: (
+    text: string,
+    phone: string,
+  ) => Promise<{ ok: boolean; message: string; needsPhone?: boolean; needsLink?: boolean }>;
 }) {
   const [text, setText] = useState("");
   const [phone, setPhone] = useState("");
   const [sending, setSending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const [needsPhone, setNeedsPhone] = useState(false);
+  const [showPhone, setShowPhone] = useState(closed);
+  const [showLink, setShowLink] = useState(false);
+  const armed = useRef(false);
   const first = name.split(" ")[0] || name;
+  const linked = link?.status === "connected";
+
+  async function deliver(body: string, number: string) {
+    setSending(true);
+    setNote(null);
+    try {
+      const result = await onSend(body, number);
+      setNote(result.message);
+      setShowPhone(closed || Boolean(result.needsPhone) || Boolean(result.needsLink));
+      setShowLink(Boolean(result.needsLink));
+      armed.current = Boolean(result.needsLink);
+      if (result.ok) {
+        setText("");
+        armed.current = false;
+        toast.success(result.message);
+      }
+    } catch {
+      setNote("Could not send. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!armed.current || !linked || sending) return;
+    const body = text.trim();
+    const number = phone.trim();
+    if (!body || number.replace(/\D/g, "").length < 8) return;
+    armed.current = false;
+    void deliver(body, number);
+    // deliver once when the phone finishes linking
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linked]);
 
   return (
     <form
@@ -1155,20 +1226,8 @@ function LeadReply({
       onSubmit={(e) => {
         e.preventDefault();
         const body = text.trim();
-        if (!body) return;
-        setSending(true);
-        setNote(null);
-        void onSend(body, phone)
-          .then((result) => {
-            setNote(result.message);
-            setNeedsPhone(Boolean(result.window));
-            if (result.ok) {
-              setText("");
-              toast.success(result.message);
-            }
-          })
-          .catch(() => setNote("Could not send. Try again."))
-          .finally(() => setSending(false));
+        if (!body || sending) return;
+        void deliver(body, phone);
       }}
     >
       <div className="flex gap-2">
@@ -1186,14 +1245,37 @@ function LeadReply({
           {sending ? "Sending…" : "Send"}
         </button>
       </div>
-      {needsPhone ? (
+      {showPhone ? (
         <Input
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="WhatsApp number, country code"
+          placeholder="Their WhatsApp number"
           inputMode="tel"
           className="h-11"
         />
+      ) : null}
+      {showLink && !linked ? (
+        <div className="rounded-md bg-subtle px-3 py-3">
+          <p className="text-xs leading-relaxed text-muted">
+            WhatsApp → Linked devices → Link a device
+          </p>
+          {link?.qrDataUrl ? (
+            <img
+              src={link.qrDataUrl}
+              alt="WhatsApp QR code"
+              width={224}
+              height={224}
+              className="mx-auto mt-3 size-44 rounded-md bg-accent-fg p-2"
+            />
+          ) : (
+            <p className="mt-2 text-xs text-faint">
+              {link?.status === "connecting" ? "Preparing the code…" : "Starting WhatsApp…"}
+            </p>
+          )}
+          {link?.pairingCode ? (
+            <p className="mt-2 text-center font-mono text-lg tracking-widest text-fg">{link.pairingCode}</p>
+          ) : null}
+        </div>
       ) : null}
       {note ? <p className="text-xs leading-relaxed text-muted">{note}</p> : null}
     </form>
