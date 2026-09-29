@@ -223,6 +223,19 @@ var Mic = createLucideIcon("mic", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Paperclip = createLucideIcon("paperclip", [["path", {
+	d: "M13.234 20.252 21 12.3",
+	key: "1cbrk9"
+}], ["path", {
+	d: "m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486",
+	key: "1pkts6"
+}]]);
+/**
+* @license lucide-react v0.510.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var PhoneOff = createLucideIcon("phone-off", [
 	["path", {
 		d: "M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272",
@@ -380,4 +393,4 @@ var X = createLucideIcon("x", [["path", {
 	key: "d8bk6v"
 }]]);
 //#endregion
-export { SquarePen as a, Phone as c, MicOff as d, Menu as f, Check as h, Trash2 as i, PhoneOff as l, CircleAlert as m, Users as n, SendHorizontal as o, Info as p, TriangleAlert as r, Plus as s, X as t, Mic as u };
+export { SquarePen as a, Phone as c, Mic as d, MicOff as f, Check as g, CircleAlert as h, Trash2 as i, PhoneOff as l, Info as m, Users as n, SendHorizontal as o, Menu as p, TriangleAlert as r, Plus as s, X as t, Paperclip as u };

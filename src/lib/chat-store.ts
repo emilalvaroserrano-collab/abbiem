@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AgentAction } from "@/lib/agent/types";
+import type { ChatAttachment } from "@/lib/attachments";
 
 export type ThreadMessage = {
   id: string;
@@ -8,6 +9,7 @@ export type ThreadMessage = {
   content: string;
   createdAt: number;
   actions: AgentAction[];
+  attachments?: ChatAttachment[];
   pending?: boolean;
   error?: string;
 };
@@ -93,9 +95,10 @@ export const useChatStore = create<ChatState>()(
             conversations: conversations.map((c) => {
               if (c.id !== activeId) return c;
               const messages = [...c.messages, msg].slice(-80);
+              const source = msg.content.trim() || msg.attachments?.[0]?.name || "";
               const titled =
-                (c.title === "New chat" || !c.title) && msg.role === "user" && msg.content.trim()
-                  ? titleFrom(msg.content)
+                (c.title === "New chat" || !c.title) && msg.role === "user" && source
+                  ? titleFrom(source)
                   : c.title;
               return { ...c, messages, title: titled, updatedAt: Date.now() };
             }),

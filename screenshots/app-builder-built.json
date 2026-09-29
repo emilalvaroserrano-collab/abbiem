@@ -8,8 +8,8 @@
       "title": "Abbie",
       "hasCanvas": false,
       "bodyTextLen": 338,
-      "bodyTextHash": "f5cc91a8ff69076ccdc76e76e2589a6559fdd6ad9c311e3e5820b5b3da40e945",
-      "bodyTextPrefix": "Abbie Active now Link WhatsApp Today · 3:25 AM Hey — I’m Abbie. ",
+      "bodyTextHash": "889b5755d330bcbebb88f3dd8d20d2345c614b3bb35bcd43c6d032841fdc2581",
+      "bodyTextPrefix": "Abbie Active now Link WhatsApp Today · 2:37 PM Hey — I’m Abbie. ",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -21,9 +21,9 @@
       "status": 200,
       "title": "Abbie",
       "hasCanvas": false,
-      "bodyTextLen": 324,
-      "bodyTextHash": "dedb1ad60afd5d6a1c04141fdcec3e65f8ece386744907d568da1a5d7086c21f",
-      "bodyTextPrefix": "Abbie Active now Today · 3:25 AM Hey — I’m Abbie. Tell me what y",
+      "bodyTextLen": 308,
+      "bodyTextHash": "dda1015075b45f61ca790afd079f049a36fcbfb501a8bb7a621762f8bbab9a89",
+      "bodyTextPrefix": "Abbie Active now Today · 2:37 PM Hey — I’m Abbie. Tell me what y",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -33,6 +33,8 @@
   "brandWarnings": [],
   "authWarnings": [],
   "verdictFile": "/workspace/screenshots/app-builder-built.json",
-  "divergesFromBaseline": false,
-  "baselineReasons": []
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "mobile: body text replaced (similar length, page start changed)"
+  ]
 }

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { ensureSecrets } from "@/lib/secrets.server";
 import { AGENT_TOOLS, buildSystemPrompt, executeTool } from "./tools";
 import type { AgentAction, AgentTurnResult, ChatTurn, MemoryUpdate } from "./types";
 
@@ -11,7 +12,9 @@ type OAIMessage = {
     type: "function";
     function: { name: string; arguments: string };
   }>;
+  images?: string[];
   tool_call_id?: string;
+  tool_name?: string;
   name?: string;
 };
 
@@ -20,7 +23,8 @@ const turnInput = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string(),
+        content: z.string().max(12000),
+        images: z.array(z.string().max(400_000)).max(4).optional(),
       }),
     )
     .max(24),
@@ -37,31 +41,15 @@ const turnInput = z.object({
   otherTitles: z.array(z.string().max(80)).max(12).optional(),
 });
 
-async function synthesize(text: string, apiKey: string): Promise<string | null> {
-  const spoken = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[*_#`]+/g, "")
-    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 800);
-  if (!spoken) return null;
-  const res = await fetch("https://api.x.ai/v1/tts", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      text: spoken,
-      voice_id: "eve",
-      language: "en",
-    }),
-  });
-  if (!res.ok) return null;
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.byteLength < 80) return null;
-  return buf.toString("base64");
+const OLLAMA_MODEL = () => process.env.OLLAMA_MODEL || "gemma4:31b";
+
+function toolArgs(value: unknown) {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value ?? {});
+  } catch {
+    return "{}";
+  }
 }
 
 async function completeTurn(
@@ -70,9 +58,10 @@ async function completeTurn(
   memory: Array<{ category: string; text: string }>,
   otherTitles: string[],
 ): Promise<AgentTurnResult> {
-  const apiKey = process.env.XAI_API_KEY;
+  ensureSecrets();
+  const apiKey = process.env.OLLAMA_CLOUD_API_KEY || process.env.OLLAMA_API_KEY;
   if (!apiKey) {
-    return { ok: false, error: "Abbie’s voice is unavailable in this environment." };
+    return { ok: false, error: "Chat isn’t connected. OLLAMA_CLOUD_API_KEY is missing." };
   }
 
   const { fetchOperatorSnapshot } = await import("@/lib/meta/graph.server");
@@ -93,26 +82,36 @@ async function completeTurn(
 
   const convo: OAIMessage[] = [
     { role: "system", content: buildSystemPrompt(snapshot, voice, memory, otherTitles) },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ...messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.images?.length
+        ? {
+            images: m.images.map((image) => image.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")),
+          }
+        : {}),
+    })),
   ];
 
   const actions: AgentAction[] = [];
   const memoryUpdates: MemoryUpdate[] = [];
   let guard = 0;
   while (guard++ < 5) {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    const res = await fetch("https://ollama.com/api/chat", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "grok-4.5",
+        model: OLLAMA_MODEL(),
         messages: convo,
         tools: AGENT_TOOLS,
-        tool_choice: "auto",
-        temperature: voice ? 0.55 : 0.62,
-        max_tokens: voice ? 360 : 720,
+        stream: false,
+        options: {
+          temperature: voice ? 0.55 : 0.62,
+          num_predict: voice ? 360 : 720,
+        },
       }),
     });
     if (!res.ok) {
@@ -121,28 +120,36 @@ async function completeTurn(
         ok: false,
         error: rate
           ? "Give me a second — I’m catching my breath."
-          : `Something’s off on my side (${res.status}). Try that again.`,
+          : res.status === 401
+            ? "Ollama rejected the cloud key."
+            : `Something’s off on my side (${res.status}). Try that again.`,
       };
     }
     const json = (await res.json()) as {
-      choices?: Array<{
-        message?: {
-          content?: string | null;
-          tool_calls?: OAIMessage["tool_calls"];
-        };
-        finish_reason?: string;
-      }>;
+      message?: {
+        content?: string | null;
+        tool_calls?: Array<{
+          function: { name: string; arguments: unknown };
+        }>;
+      };
     };
-    const msg = json.choices?.[0]?.message;
+    const msg = json.message;
     if (!msg) {
       return { ok: false, error: "I blanked for a second. Say that again?" };
     }
-    const calls = msg.tool_calls ?? [];
+    const calls = (msg.tool_calls ?? [])
+      .filter((call) => call.function?.name)
+      .map((call) => ({
+        function: {
+          name: call.function.name,
+          arguments: toolArgs(call.function.arguments),
+        },
+      }));
     if (calls.length) {
       convo.push({
         role: "assistant",
-        content: msg.content ?? null,
-        tool_calls: calls,
+        content: typeof msg.content === "string" ? msg.content : "",
+        tool_calls: msg.tool_calls as OAIMessage["tool_calls"],
       });
       for (const call of calls) {
         const result = await executeTool(
@@ -154,23 +161,19 @@ async function completeTurn(
         );
         convo.push({
           role: "tool",
-          tool_call_id: call.id,
           name: call.function.name,
+          tool_name: call.function.name,
           content: result,
         });
       }
       continue;
     }
-    const text = (msg.content ?? "").trim();
-    let audio: string | null = null;
-    if (voice && text) {
-      audio = await synthesize(text, apiKey);
-    }
+    const text = (typeof msg.content === "string" ? msg.content : "").trim();
     return {
       ok: true,
       text: text || (actions.length ? "Done." : "I’m here."),
       actions,
-      audio,
+      audio: null,
       memoryUpdates,
     };
   }
@@ -181,8 +184,12 @@ export const runAgentTurn = createServerFn({ method: "POST" })
   .validator(turnInput)
   .handler(async ({ data }): Promise<AgentTurnResult> => {
     const trimmed = data.messages
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
-      .filter((m) => m.content.trim())
+      .map((m) => ({
+        role: m.role,
+        content: m.content.slice(0, 8000),
+        images: m.images?.slice(0, 4),
+      }))
+      .filter((m) => m.content.trim() || (m.images && m.images.length > 0))
       .slice(-18);
     if (!trimmed.length || trimmed[trimmed.length - 1]?.role !== "user") {
       return { ok: false, error: "Say something first." };
@@ -213,53 +220,3 @@ export const getSnapshot = createServerFn({ method: "GET" }).handler(async () =>
     };
   }
 });
-
-let abbieGreeting: string | null | undefined;
-
-export const speakGreeting = createServerFn({ method: "POST" }).handler(async () => {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return { ok: false as const, error: "Voice is unavailable." };
-  if (abbieGreeting) return { ok: true as const, audio: abbieGreeting };
-  const audio = await synthesize(
-    "Hey, it’s Abbie. Tell me what you need — WhatsApp, a page post, a banner, a paused ads campaign — and I’ll take it from there.",
-    apiKey,
-  );
-  if (!audio) return { ok: false as const, error: "Could not start the call." };
-  abbieGreeting = audio;
-  return { ok: true as const, audio };
-});
-
-export const transcribeAudio = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      audioBase64: z.string().min(20).max(2_000_000),
-      mime: z.string().max(80).optional(),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const apiKey = process.env.XAI_API_KEY;
-    if (!apiKey) return { ok: false as const, error: "Voice is unavailable." };
-    const mime = data.mime && /^[\w.+-]+\/[\w.+-]+$/.test(data.mime) ? data.mime : "audio/webm";
-    const bin = Buffer.from(data.audioBase64, "base64");
-    if (bin.byteLength < 64) return { ok: false as const, error: "That clip was empty." };
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([new Uint8Array(bin)], { type: mime }),
-      "clip.webm",
-    );
-    form.append("model", "grok-voice-transcribe-2.0");
-    form.append("language", "en");
-    const res = await fetch("https://api.x.ai/v1/stt", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-    });
-    if (!res.ok) {
-      return { ok: false as const, error: `Could not hear that (${res.status}).` };
-    }
-    const json = (await res.json()) as { text?: string };
-    const text = (json.text ?? "").trim();
-    if (!text) return { ok: false as const, error: "I didn’t catch that." };
-    return { ok: true as const, text };
-  });

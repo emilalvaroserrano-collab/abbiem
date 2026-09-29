@@ -1,5 +1,5 @@
 import { o as __toESM } from "../_runtime.mjs";
-import { n as require_pino } from "../_libs/@whiskeysockets/baileys.mjs";
+import { n as require_pino } from "../_libs/@whiskeysockets/baileys+[...].mjs";
 import { t as require_lib } from "../_libs/qrcode.mjs";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -209,7 +209,7 @@ async function startSocket() {
 	s.startPromise = (async () => {
 		const gen = ++session().generation;
 		try {
-			const baileys = await import("../_libs/@whiskeysockets/baileys.mjs").then((n) => n.t);
+			const baileys = await import("../_libs/@whiskeysockets/baileys+[...].mjs").then((n) => n.t);
 			const dir = authDir();
 			mkdirSync(dir, { recursive: true });
 			const { state, saveCreds } = await baileys.useMultiFileAuthState(dir);

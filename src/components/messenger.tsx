@@ -8,6 +8,7 @@ import {
   Mic,
   Phone,
   Plus,
+  Paperclip,
   SendHorizontal,
   SquarePen,
   Trash2,
@@ -15,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getSnapshot, runAgentTurn, speakGreeting, transcribeAudio } from "@/lib/agent/functions";
+import { getSnapshot, runAgentTurn } from "@/lib/agent/functions";
 import {
   getWhatsAppStatus,
   logoutWhatsAppLink,
@@ -28,6 +29,7 @@ import type { WaStatus } from "@/lib/whatsapp/types";
 import type { AgentAction } from "@/lib/agent/types";
 import type { LeadHit, LeadSource } from "@/lib/meta/types";
 import { newMessage, useChatStore, type Conversation, type ThreadMessage } from "@/lib/chat-store";
+import { attachmentNote, filesToAttachments, type ChatAttachment } from "@/lib/attachments";
 import { canUseBrowserSpeech, playBase64Mp3, startBrowserListen } from "@/lib/speech";
 import { AbbieAvatar } from "@/components/marks";
 import { CallOverlay, type CallPhase } from "@/components/call-overlay";
@@ -101,6 +103,7 @@ export function Messenger() {
 
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -110,12 +113,13 @@ export function Messenger() {
 
   const scroller = useRef<HTMLDivElement>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const listenStop = useRef<null | (() => void)>(null);
   const audioEl = useRef<HTMLAudioElement | null>(null);
   const callGen = useRef(0);
   const inCall = useRef(false);
   const mutedRef = useRef(false);
-  const recorder = useRef<MediaRecorder | null>(null);
+  const liveRef = useRef<{ stop: () => void; setMuted: (muted: boolean) => void } | null>(null);
 
   useEffect(() => setHydrated(true), []);
   useEffect(() => {
@@ -131,23 +135,38 @@ export function Messenger() {
 
   async function send(text: string, voice: boolean) {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
-    const user = newMessage("user", trimmed);
+    const files = voice ? [] : attachments;
+    if ((!trimmed && files.length === 0) || busy) return;
+    const shown = trimmed;
+    const user = newMessage("user", shown, { attachments: files.length ? files : undefined });
     const pending = newMessage("assistant", "", { pending: true });
     add(user);
     add(pending);
     setBusy(true);
     setDraft("");
+    setAttachments([]);
     if (ta.current) {
       ta.current.style.height = "auto";
     }
     const gen = callGen.current;
     try {
       const store = useChatStore.getState();
-      const history = store.conversations
-        .find((c) => c.id === store.activeId)
-        ?.messages.filter((m) => m.content && !m.pending)
-        .map((m) => ({ role: m.role, content: m.content })) ?? [];
+      const history =
+        store.conversations
+          .find((c) => c.id === store.activeId)
+          ?.messages.filter((m) => !m.pending && (m.content || m.attachments?.length))
+          .map((m, index, all) => {
+            const notes = (m.attachments ?? []).map(attachmentNote).join("\n");
+            const content = [m.content.trim(), notes].filter(Boolean).join("\n").slice(0, 8000);
+            const last = index === all.length - 1;
+            const images =
+              last && m.role === "user"
+                ? (m.attachments ?? [])
+                    .filter((file) => file.kind === "image" && file.url)
+                    .map((file) => file.url as string)
+                : undefined;
+            return { role: m.role, content, images };
+          }) ?? [];
       const result = await runAgentTurn({
         data: {
           messages: history,
@@ -199,44 +218,13 @@ export function Messenger() {
       });
     } finally {
       setBusy(false);
-      if (inCall.current && gen === callGen.current && !mutedRef.current) {
-        queueMicrotask(() => startCallListen());
-      } else if (inCall.current && gen === callGen.current) {
-        setCallPhase("listening");
-        setCallCaption("");
-      }
     }
   }
 
   function stopListen() {
     listenStop.current?.();
     listenStop.current = null;
-    if (recorder.current && recorder.current.state !== "inactive") {
-      recorder.current.stop();
-    }
-    recorder.current = null;
     setListening(false);
-  }
-
-  function startCallListen() {
-    if (!inCall.current || mutedRef.current) return;
-    stopListen();
-    setCallPhase("listening");
-    setCallCaption("");
-    beginListen({
-      onInterim: (t) => {
-        if (inCall.current) setCallCaption(t);
-      },
-      onFinal: (t) => {
-        if (!inCall.current) return;
-        setCallCaption(t);
-        setCallPhase("thinking");
-        void send(t, true);
-      },
-      onEmpty: () => {
-        if (inCall.current && !mutedRef.current) startCallListen();
-      },
-    });
   }
 
   function beginListen(opts: {
@@ -271,61 +259,14 @@ export function Messenger() {
     void startMediaListen(opts);
   }
 
-  async function startMediaListen(opts: {
-    onInterim: (t: string) => void;
-    onFinal: (t: string) => void;
-    onEmpty: () => void;
-  }) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
-      };
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        setListening(false);
-        recorder.current = null;
-        const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        if (blob.size < 64) {
-          opts.onEmpty();
-          return;
-        }
-        const buf = await blob.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = "";
-        const chunk = 0x8000;
-        for (let i = 0; i < bytes.length; i += chunk) {
-          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-        }
-        const b64 = btoa(binary);
-        const out = await transcribeAudio({
-          data: { audioBase64: b64, mime: blob.type || "audio/webm" },
-        });
-        if (out.ok) opts.onFinal(out.text);
-        else {
-          toast.error(out.error);
-          opts.onEmpty();
-        }
-      };
-      recorder.current = rec;
-      rec.start();
-      listenStop.current = () => {
-        if (rec.state !== "inactive") rec.stop();
-      };
-      window.setTimeout(() => {
-        if (rec.state === "recording") rec.stop();
-      }, 8000);
-    } catch {
-      setListening(false);
-      toast.error("Microphone permission is blocked.");
-      opts.onEmpty();
-    }
+  function startMediaListen(opts: { onEmpty: () => void }) {
+    setListening(false);
+    toast.error("This browser can’t type from the mic. Use the call button — that’s live voice.");
+    opts.onEmpty();
   }
 
   async function startCall() {
-    if (callOpen) return;
+    if (callOpen || liveRef.current) return;
     inCall.current = true;
     callGen.current += 1;
     const gen = callGen.current;
@@ -334,29 +275,59 @@ export function Messenger() {
     mutedRef.current = false;
     setCallPhase("connecting");
     setCallCaption("");
+    stopListen();
+    const store = useChatStore.getState();
+    const { startGeminiLive } = await import("@/lib/voice/gemini-live");
+    let handle;
     try {
-      const greet = await speakGreeting();
-      if (!inCall.current || gen !== callGen.current) return;
-      if (greet.ok) {
-        setCallPhase("speaking");
-        setCallCaption(
-          "Hey, it’s Abbie. Tell me what you need — WhatsApp, a page post, a banner, a paused ads campaign — and I’ll take it from there.",
-        );
-        const played = playBase64Mp3(greet.audio);
-        audioEl.current = played.el;
-        await played.done;
-      }
+      handle = await startGeminiLive({
+      memory: store.memory.map((m) => ({ category: m.category, text: m.text })),
+      otherTitles: store.conversations.filter((c) => c.id !== store.activeId).map((c) => c.title),
+      isMuted: () => mutedRef.current,
+      isCancelled: () => !inCall.current || gen !== callGen.current,
+      onPhase: (phase) => {
+        if (gen === callGen.current) setCallPhase(phase);
+      },
+      onCaption: (text) => {
+        if (gen === callGen.current) setCallCaption(text);
+      },
+      onUserText: (text) => {
+        if (gen === callGen.current) add(newMessage("user", text));
+      },
+      onAssistant: (text, actions) => {
+        if (gen === callGen.current) add(newMessage("assistant", text, { actions }));
+      },
+      onMemory: (updates) => {
+        const adds = updates.filter((u) => u.action === "add");
+        const drops = updates.filter((u) => u.action === "remove");
+        if (adds.length) remember(adds);
+        for (const drop of drops) forget(drop.text);
+      },
+      onError: (message) => {
+        if (gen !== callGen.current) return;
+        toast.error(message);
+        setCallCaption(message);
+      },
+    });
     } catch {
-      /* still listen */
+      if (gen === callGen.current) {
+        toast.error("The live call didn’t connect.");
+        setCallCaption("The live call didn’t connect.");
+      }
+      return;
     }
-    if (inCall.current && gen === callGen.current && !mutedRef.current) {
-      startCallListen();
+    if (!handle || !inCall.current || gen !== callGen.current) {
+      handle?.stop();
+      return;
     }
+    liveRef.current = handle;
   }
 
   function hangup() {
     inCall.current = false;
     callGen.current += 1;
+    liveRef.current?.stop();
+    liveRef.current = null;
     stopListen();
     audioEl.current?.pause();
     audioEl.current = null;
@@ -369,12 +340,10 @@ export function Messenger() {
     const next = !muted;
     setMuted(next);
     mutedRef.current = next;
+    liveRef.current?.setMuted(next);
     if (next) {
       stopListen();
-      setCallPhase("listening");
       setCallCaption("");
-    } else if (inCall.current && !busy) {
-      startCallListen();
     }
   }
 
@@ -396,6 +365,15 @@ export function Messenger() {
   function onSubmit(e?: { preventDefault?: () => void }) {
     e?.preventDefault?.();
     void send(draft, false);
+  }
+
+  async function onPickFiles(list: FileList | File[] | null) {
+    const picked = list ? [...list] : [];
+    if (!picked.length) return;
+    const { attachments: next, errors } = await filesToAttachments(picked, attachments.length);
+    if (errors.length) toast.error(errors[0]);
+    if (next.length) setAttachments((current) => [...current, ...next].slice(0, 4));
+    if (fileInput.current) fileInput.current.value = "";
   }
 
   function openLeads() {
@@ -544,11 +522,57 @@ export function Messenger() {
               ))}
             </div>
           )}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex gap-2 overflow-x-auto px-1">
+              {attachments.map((file) => (
+                <div key={file.id} className="relative shrink-0">
+                  {file.kind === "image" && file.url ? (
+                    <img
+                      src={file.url}
+                      alt=""
+                      className="size-16 rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-28 items-center gap-1.5 rounded-md bg-elevated px-2">
+                      <Paperclip className="size-3.5 shrink-0 text-muted" />
+                      <span className="truncate text-xs text-fg">{file.name}</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() =>
+                      setAttachments((current) => current.filter((item) => item.id !== file.id))
+                    }
+                    className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-fg text-bg"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-1.5">
             <IconBtn label="Account details" onClick={() => setInfoOpen(true)}>
               <Plus className="size-6" />
             </IconBtn>
-            <div className="flex min-w-0 flex-1 items-end rounded-full bg-elevated px-4 py-1.5">
+            <div className="flex min-w-0 flex-1 items-end rounded-full bg-elevated py-1.5 pl-1.5 pr-4">
+              <button
+                type="button"
+                aria-label="Attach a photo or file"
+                onClick={() => fileInput.current?.click()}
+                className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted hover:text-fg"
+              >
+                <Paperclip className="size-5" />
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"
+                className="hidden"
+                onChange={(e) => void onPickFiles(e.target.files)}
+              />
               <textarea
                 ref={ta}
                 rows={1}
@@ -561,6 +585,12 @@ export function Messenger() {
                   el.style.height = "auto";
                   el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
                 }}
+                onPaste={(e) => {
+                  const pasted = [...e.clipboardData.files];
+                  if (!pasted.length) return;
+                  e.preventDefault();
+                  void onPickFiles(pasted);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -570,7 +600,7 @@ export function Messenger() {
                 className="max-h-28 min-h-9 w-full resize-none bg-transparent py-1.5 text-[0.9375rem] text-fg outline-none placeholder:text-faint"
               />
             </div>
-            {draft.trim() ? (
+            {draft.trim() || attachments.length > 0 ? (
               <IconBtn label="Send" onClick={() => onSubmit()} tone="accent">
                 <SendHorizontal className="size-5" />
               </IconBtn>
@@ -848,7 +878,32 @@ function MessageRow({ msg, showAvatar }: { msg: ThreadMessage; showAvatar: boole
             msg.error && "bg-danger/20 text-fg",
           )}
         >
-          {msg.pending ? <TypingDots /> : msg.content}
+          {msg.pending ? (
+            <TypingDots />
+          ) : (
+            <>
+              {msg.attachments && msg.attachments.length > 0 && (
+                <div className={cn("flex flex-col gap-1.5", msg.content && "mb-1.5")}>
+                  {msg.attachments.map((file) =>
+                    file.kind === "image" && file.url ? (
+                      <img
+                        key={file.id}
+                        src={file.url}
+                        alt={file.name}
+                        className="max-h-52 w-full rounded-md object-cover"
+                      />
+                    ) : (
+                      <span key={file.id} className="flex items-center gap-1.5 text-xs">
+                        <Paperclip className="size-3.5 shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+              {msg.content}
+            </>
+          )}
         </div>
         {msg.actions.length > 0 && (
           <div className="mt-1.5 space-y-1.5">

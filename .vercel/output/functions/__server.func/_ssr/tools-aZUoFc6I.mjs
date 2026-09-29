@@ -1,7 +1,25 @@
-import { t as createServerFn } from "./ssr.mjs";
-import { t as createServerRpc } from "./createServerRpc-A6pJPYTF.mjs";
-import { n as array, o as object, r as boolean, s as string, t as _enum } from "../_libs/zod.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/functions-CAYbS8zS.js
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+//#region node_modules/.nitro/vite/services/ssr/assets/tools-aZUoFc6I.js
+var loaded = false;
+/** Load gitignored server keys into process.env. Never sent to the browser. */
+function ensureSecrets() {
+	if (loaded) return;
+	loaded = true;
+	try {
+		const text = readFileSync(join(process.cwd(), ".env"), "utf8");
+		for (const line of text.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#")) continue;
+			const eq = trimmed.indexOf("=");
+			if (eq < 1) continue;
+			const key = trimmed.slice(0, eq).trim();
+			let value = trimmed.slice(eq + 1).trim();
+			if (value.startsWith("\"") && value.endsWith("\"") || value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+			if (!process.env[key]) process.env[key] = value;
+		}
+	} catch {}
+}
 var AGENT_TOOLS = [
 	{
 		type: "function",
@@ -717,7 +735,7 @@ function buildSystemPrompt(snapshot, voice, memory, otherTitles) {
 		"",
 		"How you talk:",
 		"Messenger with a colleague. Contractions. Short sentences. The odd dry aside. Never 'Great question', never 'I'd be happy to', never markdown, never emoji unless they used them first. Don't narrate your process. Don't say you're remembering things — just use them next time. First person. You are Abbie.",
-		voice ? "This is a live voice call. After you act, 1–3 spoken sentences. Names, not ids." : "This is a typed chat. Two to four sentences after you act. Name the page or person. Don't dump inventory unless they asked what's connected.",
+		voice ? "This is a live voice call. After you act, 1–3 spoken sentences. Names, not ids." : "This is a typed chat. Two to four sentences after you act. Name the page or person. Don't dump inventory unless they asked what's connected. If they attach an image, you can see it — talk about what is actually in the picture. A file excerpt is the file. A filename alone means you do not have the contents.",
 		"",
 		"Work you can do: WhatsApp from their linked phone, Facebook Page posts, Grok Imagine banners/ads/videos, 4× daily Page posts, Messenger replies, paused Meta Ads campaigns, and a leads list from Meta.",
 		"Leads: run find_leads when they want prospects. Meta will not give a dump of random people who might like the business. You pull people who already engaged (lead forms, Messenger, comments, tags), connected pages in the same category, and matching ad interest audiences to target in the Philippines. Filter by their keywords. Name the hottest 3–5; don’t dump ids.",
@@ -745,242 +763,5 @@ function buildSystemPrompt(snapshot, voice, memory, otherTitles) {
 		ads
 	].join("\n");
 }
-var turnInput = object({
-	messages: array(object({
-		role: _enum(["user", "assistant"]),
-		content: string()
-	})).max(24),
-	voice: boolean().optional(),
-	memory: array(object({
-		category: string().max(24),
-		text: string().max(240)
-	})).max(48).optional(),
-	otherTitles: array(string().max(80)).max(12).optional()
-});
-async function synthesize(text, apiKey) {
-	const spoken = text.replace(/```[\s\S]*?```/g, " ").replace(/[*_#`]+/g, "").replace(/\[(.*?)\]\((.*?)\)/g, "$1").replace(/\s+/g, " ").trim().slice(0, 800);
-	if (!spoken) return null;
-	const res = await fetch("https://api.x.ai/v1/tts", {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-			"Content-Type": "application/json"
-		},
-		body: JSON.stringify({
-			text: spoken,
-			voice_id: "eve",
-			language: "en"
-		})
-	});
-	if (!res.ok) return null;
-	const buf = Buffer.from(await res.arrayBuffer());
-	if (buf.byteLength < 80) return null;
-	return buf.toString("base64");
-}
-async function completeTurn(messages, voice, memory, otherTitles) {
-	const apiKey = process.env.XAI_API_KEY;
-	if (!apiKey) return {
-		ok: false,
-		error: "Abbie’s voice is unavailable in this environment."
-	};
-	const { fetchOperatorSnapshot } = await import("./graph.server-CjL3s8xK.mjs");
-	const snapshot = await fetchOperatorSnapshot().catch(() => ({
-		operator: "Connected operator",
-		pages: [],
-		instagram: [],
-		adAccounts: [],
-		inboxUnread: 0,
-		whatsappLink: {
-			status: "idle",
-			userName: null,
-			userPhone: null,
-			error: null,
-			saved: false
-		}
-	}));
-	const convo = [{
-		role: "system",
-		content: buildSystemPrompt(snapshot, voice, memory, otherTitles)
-	}, ...messages.map((m) => ({
-		role: m.role,
-		content: m.content
-	}))];
-	const actions = [];
-	const memoryUpdates = [];
-	let guard = 0;
-	while (guard++ < 5) {
-		const res = await fetch("https://api.x.ai/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${apiKey}`,
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				model: "grok-4.5",
-				messages: convo,
-				tools: AGENT_TOOLS,
-				tool_choice: "auto",
-				temperature: voice ? .55 : .62,
-				max_tokens: voice ? 360 : 720
-			})
-		});
-		if (!res.ok) return {
-			ok: false,
-			error: res.status === 429 ? "Give me a second — I’m catching my breath." : `Something’s off on my side (${res.status}). Try that again.`
-		};
-		const msg = (await res.json()).choices?.[0]?.message;
-		if (!msg) return {
-			ok: false,
-			error: "I blanked for a second. Say that again?"
-		};
-		const calls = msg.tool_calls ?? [];
-		if (calls.length) {
-			convo.push({
-				role: "assistant",
-				content: msg.content ?? null,
-				tool_calls: calls
-			});
-			for (const call of calls) {
-				const result = await executeTool(call.function.name, call.function.arguments, snapshot, actions, memoryUpdates);
-				convo.push({
-					role: "tool",
-					tool_call_id: call.id,
-					name: call.function.name,
-					content: result
-				});
-			}
-			continue;
-		}
-		const text = (msg.content ?? "").trim();
-		let audio = null;
-		if (voice && text) audio = await synthesize(text, apiKey);
-		return {
-			ok: true,
-			text: text || (actions.length ? "Done." : "I’m here."),
-			actions,
-			audio,
-			memoryUpdates
-		};
-	}
-	return {
-		ok: false,
-		error: "I got tangled running that. Try a simpler ask."
-	};
-}
-var runAgentTurn_createServerFn_handler = createServerRpc({
-	id: "6d7cd82177e6d276e369ea378945fba9dd62ee3623bfdeb5c7a7db1289fc6eb8",
-	name: "runAgentTurn",
-	filename: "src/lib/agent/functions.ts"
-}, (opts) => runAgentTurn.__executeServer(opts));
-var runAgentTurn = createServerFn({ method: "POST" }).validator(turnInput).handler(runAgentTurn_createServerFn_handler, async ({ data }) => {
-	const trimmed = data.messages.map((m) => ({
-		role: m.role,
-		content: m.content.slice(0, 4e3)
-	})).filter((m) => m.content.trim()).slice(-18);
-	if (!trimmed.length || trimmed[trimmed.length - 1]?.role !== "user") return {
-		ok: false,
-		error: "Say something first."
-	};
-	try {
-		return await completeTurn(trimmed, Boolean(data.voice), (data.memory ?? []).map((m) => ({
-			category: m.category,
-			text: m.text
-		})), data.otherTitles ?? []);
-	} catch (e) {
-		return {
-			ok: false,
-			error: e instanceof Error ? e.message : "That didn’t land. Try again."
-		};
-	}
-});
-var getSnapshot_createServerFn_handler = createServerRpc({
-	id: "928e2a8bed6d48264ecc871971a822a243035834e591947a563ffbca75b9e9a4",
-	name: "getSnapshot",
-	filename: "src/lib/agent/functions.ts"
-}, (opts) => getSnapshot.__executeServer(opts));
-var getSnapshot = createServerFn({ method: "GET" }).handler(getSnapshot_createServerFn_handler, async () => {
-	try {
-		const { fetchOperatorSnapshot } = await import("./graph.server-CjL3s8xK.mjs");
-		return {
-			data: await fetchOperatorSnapshot(),
-			error: null
-		};
-	} catch (e) {
-		return {
-			data: null,
-			error: e instanceof Error ? e.message : "Could not load Meta accounts."
-		};
-	}
-});
-var abbieGreeting;
-var speakGreeting_createServerFn_handler = createServerRpc({
-	id: "fa208a739a1045ffafce8240083d5b65cc4a9b57f43d8128f57417f850e835bf",
-	name: "speakGreeting",
-	filename: "src/lib/agent/functions.ts"
-}, (opts) => speakGreeting.__executeServer(opts));
-var speakGreeting = createServerFn({ method: "POST" }).handler(speakGreeting_createServerFn_handler, async () => {
-	const apiKey = process.env.XAI_API_KEY;
-	if (!apiKey) return {
-		ok: false,
-		error: "Voice is unavailable."
-	};
-	if (abbieGreeting) return {
-		ok: true,
-		audio: abbieGreeting
-	};
-	const audio = await synthesize("Hey, it’s Abbie. Tell me what you need — WhatsApp, a page post, a banner, a paused ads campaign — and I’ll take it from there.", apiKey);
-	if (!audio) return {
-		ok: false,
-		error: "Could not start the call."
-	};
-	abbieGreeting = audio;
-	return {
-		ok: true,
-		audio
-	};
-});
-var transcribeAudio_createServerFn_handler = createServerRpc({
-	id: "88a5617652020962ef2664963dc18677220b6797f078c0388ba7710f709db744",
-	name: "transcribeAudio",
-	filename: "src/lib/agent/functions.ts"
-}, (opts) => transcribeAudio.__executeServer(opts));
-var transcribeAudio = createServerFn({ method: "POST" }).validator(object({
-	audioBase64: string().min(20).max(2e6),
-	mime: string().max(80).optional()
-})).handler(transcribeAudio_createServerFn_handler, async ({ data }) => {
-	const apiKey = process.env.XAI_API_KEY;
-	if (!apiKey) return {
-		ok: false,
-		error: "Voice is unavailable."
-	};
-	const mime = data.mime && /^[\w.+-]+\/[\w.+-]+$/.test(data.mime) ? data.mime : "audio/webm";
-	const bin = Buffer.from(data.audioBase64, "base64");
-	if (bin.byteLength < 64) return {
-		ok: false,
-		error: "That clip was empty."
-	};
-	const form = new FormData();
-	form.append("file", new Blob([new Uint8Array(bin)], { type: mime }), "clip.webm");
-	form.append("model", "grok-voice-transcribe-2.0");
-	form.append("language", "en");
-	const res = await fetch("https://api.x.ai/v1/stt", {
-		method: "POST",
-		headers: { Authorization: `Bearer ${apiKey}` },
-		body: form
-	});
-	if (!res.ok) return {
-		ok: false,
-		error: `Could not hear that (${res.status}).`
-	};
-	const text = ((await res.json()).text ?? "").trim();
-	if (!text) return {
-		ok: false,
-		error: "I didn’t catch that."
-	};
-	return {
-		ok: true,
-		text
-	};
-});
 //#endregion
-export { getSnapshot_createServerFn_handler, runAgentTurn_createServerFn_handler, speakGreeting_createServerFn_handler, transcribeAudio_createServerFn_handler };
+export { executeTool as i, buildSystemPrompt as n, ensureSecrets as r, AGENT_TOOLS as t };

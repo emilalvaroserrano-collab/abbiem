@@ -88,7 +88,7 @@ var HEADERS = { TSS_SHELL: "X-TSS_SHELL" };
 * the dev styles URL for route-scoped CSS collection.
 */
 async function getStartManifest(matchedRoutes) {
-	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-C_z43vaY.mjs");
+	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-B8Lz5Pdd.mjs");
 	const startManifest = tsrStartManifest();
 	let routes = startManifest.routes;
 	routes[rootRouteId];
@@ -142,19 +142,19 @@ var manifest = {
 	},
 	"6d7cd82177e6d276e369ea378945fba9dd62ee3623bfdeb5c7a7db1289fc6eb8": {
 		functionName: "runAgentTurn_createServerFn_handler",
-		importer: () => import("./functions-CAYbS8zS.mjs")
+		importer: () => import("./functions-DFLMO30f.mjs")
 	},
 	"7b44fd1dd6d6c73dc43a322ebf28687fcd246ba5b626cb98bf5974eb7010329d": {
 		functionName: "requestWhatsAppPairing_createServerFn_handler",
 		importer: () => import("./functions-BekPtoXz.mjs")
 	},
-	"88a5617652020962ef2664963dc18677220b6797f078c0388ba7710f709db744": {
-		functionName: "transcribeAudio_createServerFn_handler",
-		importer: () => import("./functions-CAYbS8zS.mjs")
+	"8232f19314eae57315397fca5e2f8a509ec4e3fcecd5419b5e4e83030de71b65": {
+		functionName: "openLiveSession_createServerFn_handler",
+		importer: () => import("./functions-CTfkEdkZ.mjs")
 	},
 	"928e2a8bed6d48264ecc871971a822a243035834e591947a563ffbca75b9e9a4": {
 		functionName: "getSnapshot_createServerFn_handler",
-		importer: () => import("./functions-CAYbS8zS.mjs")
+		importer: () => import("./functions-DFLMO30f.mjs")
 	},
 	"a3df0e366d80d0e1f8470d798d8bee51806d1fce2b83ee38305083e4cdf5a26a": {
 		functionName: "sendReply_createServerFn_handler",
@@ -184,13 +184,13 @@ var manifest = {
 		functionName: "getWhatsAppStatus_createServerFn_handler",
 		importer: () => import("./functions-BekPtoXz.mjs")
 	},
+	"d9eee2a0db3f8293ec019f23a9d3309859fc308976df1c7dfa369267a058977a": {
+		functionName: "runVoiceTool_createServerFn_handler",
+		importer: () => import("./functions-CTfkEdkZ.mjs")
+	},
 	"e1199b46e59d91a67a6b30449efbbdab293e2d63040d0e2ba7cba468700fcce8": {
 		functionName: "publishPost_createServerFn_handler",
 		importer: () => import("./functions-GPcNOkg2.mjs")
-	},
-	"fa208a739a1045ffafce8240083d5b65cc4a9b57f43d8128f57417f850e835bf": {
-		functionName: "speakGreeting_createServerFn_handler",
-		importer: () => import("./functions-CAYbS8zS.mjs")
 	}
 };
 async function getServerFnById(id, access) {
@@ -1460,7 +1460,7 @@ var getBaseManifest = getProdBaseManifest;
 var createEarlyHintsForRequest = createEarlyHintsCollector;
 async function loadEntries() {
 	const [routerEntry, startEntry, pluginAdapters] = await Promise.all([
-		import("./router-BXJch8BD.mjs").then((n) => n.t),
+		import("./router-BMOc9Wwy.mjs").then((n) => n.t),
 		import("./start-5Z2QO8AU.mjs"),
 		import("./empty-plugin-adapters-D9UWiqvJ.mjs")
 	]);

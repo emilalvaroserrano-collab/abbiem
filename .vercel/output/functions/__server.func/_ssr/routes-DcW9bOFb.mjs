@@ -2,14 +2,24 @@ import { o as __toESM } from "../_runtime.mjs";
 import { i as require_react, r as require_jsx_runtime, t as useQuery } from "../_libs/react+tanstack__react-query.mjs";
 import { n as TSS_SERVER_FUNCTION, r as getServerFnById, t as createServerFn } from "./ssr.mjs";
 import { n as array, o as object, r as boolean, s as string, t as _enum } from "../_libs/zod.mjs";
-import { a as SquarePen, c as Phone, d as MicOff, f as Menu, h as Check, i as Trash2, l as PhoneOff, m as CircleAlert, n as Users, o as SendHorizontal, p as Info, s as Plus, t as X, u as Mic } from "../_libs/lucide-react.mjs";
+import { a as SquarePen, c as Phone, d as Mic, f as MicOff, g as Check, h as CircleAlert, i as Trash2, l as PhoneOff, m as Info, n as Users, o as SendHorizontal, p as Menu, s as Plus, t as X, u as Paperclip } from "../_libs/lucide-react.mjs";
 import { n as toast } from "../_libs/sonner.mjs";
 import { n as create, t as persist } from "../_libs/zustand.mjs";
 import { t as clsx } from "../_libs/clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-CF3NgYDK.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-DcW9bOFb.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
+var __defProp = Object.defineProperty;
+var __exportAll = (all, no_symbols) => {
+	let target = {};
+	for (var name in all) __defProp(target, name, {
+		get: all[name],
+		enumerable: true
+	});
+	if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+	return target;
+};
 var createSsrRpc = (functionId) => {
 	const url = "/_serverFn/" + functionId;
 	const serverFnMeta = { id: functionId };
@@ -25,7 +35,8 @@ var createSsrRpc = (functionId) => {
 var turnInput = object({
 	messages: array(object({
 		role: _enum(["user", "assistant"]),
-		content: string()
+		content: string().max(12e3),
+		images: array(string().max(4e5)).max(4).optional()
 	})).max(24),
 	voice: boolean().optional(),
 	memory: array(object({
@@ -36,11 +47,6 @@ var turnInput = object({
 });
 var runAgentTurn = createServerFn({ method: "POST" }).validator(turnInput).handler(createSsrRpc("6d7cd82177e6d276e369ea378945fba9dd62ee3623bfdeb5c7a7db1289fc6eb8"));
 var getSnapshot = createServerFn({ method: "GET" }).handler(createSsrRpc("928e2a8bed6d48264ecc871971a822a243035834e591947a563ffbca75b9e9a4"));
-var speakGreeting = createServerFn({ method: "POST" }).handler(createSsrRpc("fa208a739a1045ffafce8240083d5b65cc4a9b57f43d8128f57417f850e835bf"));
-var transcribeAudio = createServerFn({ method: "POST" }).validator(object({
-	audioBase64: string().min(20).max(2e6),
-	mime: string().max(80).optional()
-})).handler(createSsrRpc("88a5617652020962ef2664963dc18677220b6797f078c0388ba7710f709db744"));
 var getWhatsAppStatus = createServerFn({ method: "GET" }).handler(createSsrRpc("c99399d4ec1f3c1ba13a388cd1525f0f88667dd4340dd1d4742f09557b6c1239"));
 createServerFn({ method: "POST" }).handler(createSsrRpc("2c60afcbafe283adab2aa3bc4747618252771b291b80eacd584a308b15f9eb9d"));
 var requestWhatsAppPairing = createServerFn({ method: "POST" }).validator(object({ phone: string().min(8).max(20) })).handler(createSsrRpc("7b44fd1dd6d6c73dc43a322ebf28687fcd246ba5b626cb98bf5974eb7010329d"));
@@ -75,12 +81,12 @@ var getLeadBoard = createServerFn({ method: "POST" }).validator(object({
 	query: string().max(120).optional(),
 	pageId: string().optional()
 })).handler(createSsrRpc("43a4968c278ac56ce4b23ef7eb09693e2920f08b2a77ee0a0e24b5d694118f8f"));
-function uid(prefix = "m") {
+function uid$1(prefix = "m") {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 function emptyConvo() {
 	return {
-		id: uid("c"),
+		id: uid$1("c"),
 		title: "New chat",
 		updatedAt: Date.now(),
 		messages: []
@@ -93,7 +99,7 @@ function titleFrom(text) {
 }
 function newMessage(role, content, extra) {
 	return {
-		id: uid("m"),
+		id: uid$1("m"),
 		role,
 		content,
 		createdAt: Date.now(),
@@ -123,7 +129,8 @@ var useChatStore = create()(persist((set, get) => ({
 			conversations: conversations.map((c) => {
 				if (c.id !== activeId) return c;
 				const messages = [...c.messages, msg].slice(-80);
-				const titled = (c.title === "New chat" || !c.title) && msg.role === "user" && msg.content.trim() ? titleFrom(msg.content) : c.title;
+				const source = msg.content.trim() || msg.attachments?.[0]?.name || "";
+				const titled = (c.title === "New chat" || !c.title) && msg.role === "user" && source ? titleFrom(source) : c.title;
 				return {
 					...c,
 					messages,
@@ -187,7 +194,7 @@ var useChatStore = create()(persist((set, get) => ({
 				continue;
 			}
 			next.push({
-				id: uid("f"),
+				id: uid$1("f"),
 				category: f.category,
 				text,
 				at: Date.now()
@@ -220,7 +227,7 @@ var useChatStore = create()(persist((set, get) => ({
 				if (messages.length) {
 					const first = messages.find((m) => m.role === "user")?.content ?? "Earlier chat";
 					state.conversations = [{
-						id: uid("c"),
+						id: uid$1("c"),
 						title: titleFrom(first),
 						updatedAt: messages[messages.length - 1]?.createdAt ?? Date.now(),
 						messages
@@ -231,6 +238,97 @@ var useChatStore = create()(persist((set, get) => ({
 		} catch {}
 	}
 }));
+var MAX_FILES = 4;
+var MAX_BYTES = 12582912;
+function uid() {
+	return `a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+function isTextFile(file) {
+	if (file.type.startsWith("text/")) return true;
+	if (/json|csv|xml|javascript|markdown|yaml/.test(file.type)) return true;
+	return /\.(txt|md|csv|json|ts|tsx|js|jsx|py|html|css|yml|yaml|log)$/i.test(file.name);
+}
+function compressImage(file) {
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		const objectUrl = URL.createObjectURL(file);
+		img.onload = () => {
+			const scale = Math.min(1, 1024 / Math.max(img.width, img.height));
+			const width = Math.max(1, Math.round(img.width * scale));
+			const height = Math.max(1, Math.round(img.height * scale));
+			const canvas = document.createElement("canvas");
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) {
+				URL.revokeObjectURL(objectUrl);
+				reject(/* @__PURE__ */ new Error("Could not read that image."));
+				return;
+			}
+			ctx.drawImage(img, 0, 0, width, height);
+			let quality = .72;
+			let url = canvas.toDataURL("image/jpeg", quality);
+			while (url.length > 38e4 && quality > .4) {
+				quality -= .12;
+				url = canvas.toDataURL("image/jpeg", quality);
+			}
+			URL.revokeObjectURL(objectUrl);
+			resolve(url);
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(objectUrl);
+			reject(/* @__PURE__ */ new Error("Could not read that image."));
+		};
+		img.src = objectUrl;
+	});
+}
+async function filesToAttachments(files, already) {
+	const room = Math.max(0, MAX_FILES - already);
+	const errors = [];
+	if (files.length > room) errors.push(room === 0 ? "Four attachments is the limit." : `Only ${room} more will fit.`);
+	const attachments = [];
+	for (const file of files.slice(0, room)) {
+		if (file.size > MAX_BYTES) {
+			errors.push(`${file.name} is over 12 MB.`);
+			continue;
+		}
+		if (file.type.startsWith("image/")) {
+			try {
+				const url = await compressImage(file);
+				attachments.push({
+					id: uid(),
+					name: file.name || "image",
+					mime: "image/jpeg",
+					size: file.size,
+					kind: "image",
+					url
+				});
+			} catch (err) {
+				errors.push(err instanceof Error ? err.message : `Could not read ${file.name}.`);
+			}
+			continue;
+		}
+		const attachment = {
+			id: uid(),
+			name: file.name || "file",
+			mime: file.type || "application/octet-stream",
+			size: file.size,
+			kind: "file"
+		};
+		if (isTextFile(file) && file.size <= 2e5) attachment.text = (await file.text()).slice(0, 6e3);
+		attachments.push(attachment);
+	}
+	return {
+		attachments,
+		errors
+	};
+}
+function attachmentNote(file) {
+	if (file.kind === "image") return `[Image attached: ${file.name}]`;
+	if (file.text) return `[File ${file.name}]\n${file.text}`;
+	const kb = Math.max(1, Math.round(file.size / 1024));
+	return `[File attached: ${file.name} (${file.mime}, ${kb} KB). The contents were not included.]`;
+}
 function RecognitionCtor() {
 	if (typeof window === "undefined") return null;
 	const w = window;
@@ -543,6 +641,7 @@ function Messenger() {
 	const messages = conversations.find((c) => c.id === activeId)?.messages ?? conversations[0]?.messages ?? [];
 	const [hydrated, setHydrated] = (0, import_react.useState)(false);
 	const [draft, setDraft] = (0, import_react.useState)("");
+	const [attachments, setAttachments] = (0, import_react.useState)([]);
 	const [busy, setBusy] = (0, import_react.useState)(false);
 	const [listening, setListening] = (0, import_react.useState)(false);
 	const [callOpen, setCallOpen] = (0, import_react.useState)(false);
@@ -551,12 +650,13 @@ function Messenger() {
 	const [muted, setMuted] = (0, import_react.useState)(false);
 	const scroller = (0, import_react.useRef)(null);
 	const ta = (0, import_react.useRef)(null);
+	const fileInput = (0, import_react.useRef)(null);
 	const listenStop = (0, import_react.useRef)(null);
 	const audioEl = (0, import_react.useRef)(null);
 	const callGen = (0, import_react.useRef)(0);
 	const inCall = (0, import_react.useRef)(false);
 	const mutedRef = (0, import_react.useRef)(false);
-	const recorder = (0, import_react.useRef)(null);
+	const liveRef = (0, import_react.useRef)(null);
 	(0, import_react.useEffect)(() => setHydrated(true), []);
 	(0, import_react.useEffect)(() => {
 		mutedRef.current = muted;
@@ -573,22 +673,30 @@ function Messenger() {
 	const visible = hydrated ? messages : [];
 	async function send(text, voice) {
 		const trimmed = text.trim();
-		if (!trimmed || busy) return;
-		const user = newMessage("user", trimmed);
+		const files = voice ? [] : attachments;
+		if (!trimmed && files.length === 0 || busy) return;
+		const user = newMessage("user", trimmed, { attachments: files.length ? files : void 0 });
 		const pending = newMessage("assistant", "", { pending: true });
 		add(user);
 		add(pending);
 		setBusy(true);
 		setDraft("");
+		setAttachments([]);
 		if (ta.current) ta.current.style.height = "auto";
 		const gen = callGen.current;
 		try {
 			const store = useChatStore.getState();
 			const result = await runAgentTurn({ data: {
-				messages: store.conversations.find((c) => c.id === store.activeId)?.messages.filter((m) => m.content && !m.pending).map((m) => ({
-					role: m.role,
-					content: m.content
-				})) ?? [],
+				messages: store.conversations.find((c) => c.id === store.activeId)?.messages.filter((m) => !m.pending && (m.content || m.attachments?.length)).map((m, index, all) => {
+					const notes = (m.attachments ?? []).map(attachmentNote).join("\n");
+					const content = [m.content.trim(), notes].filter(Boolean).join("\n").slice(0, 8e3);
+					const images = index === all.length - 1 && m.role === "user" ? (m.attachments ?? []).filter((file) => file.kind === "image" && file.url).map((file) => file.url) : void 0;
+					return {
+						role: m.role,
+						content,
+						images
+					};
+				}) ?? [],
 				voice,
 				memory: store.memory.map((f) => ({
 					category: f.category,
@@ -636,39 +744,12 @@ function Messenger() {
 			});
 		} finally {
 			setBusy(false);
-			if (inCall.current && gen === callGen.current && !mutedRef.current) queueMicrotask(() => startCallListen());
-			else if (inCall.current && gen === callGen.current) {
-				setCallPhase("listening");
-				setCallCaption("");
-			}
 		}
 	}
 	function stopListen() {
 		listenStop.current?.();
 		listenStop.current = null;
-		if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
-		recorder.current = null;
 		setListening(false);
-	}
-	function startCallListen() {
-		if (!inCall.current || mutedRef.current) return;
-		stopListen();
-		setCallPhase("listening");
-		setCallCaption("");
-		beginListen({
-			onInterim: (t) => {
-				if (inCall.current) setCallCaption(t);
-			},
-			onFinal: (t) => {
-				if (!inCall.current) return;
-				setCallCaption(t);
-				setCallPhase("thinking");
-				send(t, true);
-			},
-			onEmpty: () => {
-				if (inCall.current && !mutedRef.current) startCallListen();
-			}
-		});
 	}
 	function beginListen(opts) {
 		setListening(true);
@@ -697,54 +778,13 @@ function Messenger() {
 		}
 		startMediaListen(opts);
 	}
-	async function startMediaListen(opts) {
-		try {
-			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-			const rec = new MediaRecorder(stream);
-			const chunks = [];
-			rec.ondataavailable = (e) => {
-				if (e.data.size) chunks.push(e.data);
-			};
-			rec.onstop = async () => {
-				stream.getTracks().forEach((t) => t.stop());
-				setListening(false);
-				recorder.current = null;
-				const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-				if (blob.size < 64) {
-					opts.onEmpty();
-					return;
-				}
-				const buf = await blob.arrayBuffer();
-				const bytes = new Uint8Array(buf);
-				let binary = "";
-				const chunk = 32768;
-				for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-				const out = await transcribeAudio({ data: {
-					audioBase64: btoa(binary),
-					mime: blob.type || "audio/webm"
-				} });
-				if (out.ok) opts.onFinal(out.text);
-				else {
-					toast.error(out.error);
-					opts.onEmpty();
-				}
-			};
-			recorder.current = rec;
-			rec.start();
-			listenStop.current = () => {
-				if (rec.state !== "inactive") rec.stop();
-			};
-			window.setTimeout(() => {
-				if (rec.state === "recording") rec.stop();
-			}, 8e3);
-		} catch {
-			setListening(false);
-			toast.error("Microphone permission is blocked.");
-			opts.onEmpty();
-		}
+	function startMediaListen(opts) {
+		setListening(false);
+		toast.error("This browser can’t type from the mic. Use the call button — that’s live voice.");
+		opts.onEmpty();
 	}
 	async function startCall() {
-		if (callOpen) return;
+		if (callOpen || liveRef.current) return;
 		inCall.current = true;
 		callGen.current += 1;
 		const gen = callGen.current;
@@ -753,22 +793,61 @@ function Messenger() {
 		mutedRef.current = false;
 		setCallPhase("connecting");
 		setCallCaption("");
+		stopListen();
+		const store = useChatStore.getState();
+		const { startGeminiLive } = await import("./gemini-live-Dm4GSUPr.mjs");
+		let handle;
 		try {
-			const greet = await speakGreeting();
-			if (!inCall.current || gen !== callGen.current) return;
-			if (greet.ok) {
-				setCallPhase("speaking");
-				setCallCaption("Hey, it’s Abbie. Tell me what you need — WhatsApp, a page post, a banner, a paused ads campaign — and I’ll take it from there.");
-				const played = playBase64Mp3(greet.audio);
-				audioEl.current = played.el;
-				await played.done;
+			handle = await startGeminiLive({
+				memory: store.memory.map((m) => ({
+					category: m.category,
+					text: m.text
+				})),
+				otherTitles: store.conversations.filter((c) => c.id !== store.activeId).map((c) => c.title),
+				isMuted: () => mutedRef.current,
+				isCancelled: () => !inCall.current || gen !== callGen.current,
+				onPhase: (phase) => {
+					if (gen === callGen.current) setCallPhase(phase);
+				},
+				onCaption: (text) => {
+					if (gen === callGen.current) setCallCaption(text);
+				},
+				onUserText: (text) => {
+					if (gen === callGen.current) add(newMessage("user", text));
+				},
+				onAssistant: (text, actions) => {
+					if (gen === callGen.current) add(newMessage("assistant", text, { actions }));
+				},
+				onMemory: (updates) => {
+					const adds = updates.filter((u) => u.action === "add");
+					const drops = updates.filter((u) => u.action === "remove");
+					if (adds.length) remember(adds);
+					for (const drop of drops) forget(drop.text);
+				},
+				onError: (message) => {
+					if (gen !== callGen.current) return;
+					toast.error(message);
+					setCallCaption(message);
+				}
+			});
+		} catch {
+			if (gen === callGen.current) {
+				toast.error("The live call didn’t connect.");
+				setCallCaption("The live call didn’t connect.");
 			}
-		} catch {}
-		if (inCall.current && gen === callGen.current && !mutedRef.current) startCallListen();
+			return;
+		}
+		if (!handle || !inCall.current || gen !== callGen.current) {
+			handle?.stop();
+			return;
+		}
+		liveRef.current = handle;
 	}
 	function hangup() {
 		inCall.current = false;
 		callGen.current += 1;
+		liveRef.current?.stop();
+		liveRef.current = null;
 		stopListen();
 		audioEl.current?.pause();
 		audioEl.current = null;
@@ -780,11 +859,11 @@ function Messenger() {
 		const next = !muted;
 		setMuted(next);
 		mutedRef.current = next;
+		liveRef.current?.setMuted(next);
 		if (next) {
 			stopListen();
-			setCallPhase("listening");
 			setCallCaption("");
-		} else if (inCall.current && !busy) startCallListen();
+		}
 	}
 	function onMicComposer() {
 		if (listening) {
@@ -803,6 +882,14 @@ function Messenger() {
 	function onSubmit(e) {
 		e?.preventDefault?.();
 		send(draft, false);
+	}
+	async function onPickFiles(list) {
+		const picked = list ? [...list] : [];
+		if (!picked.length) return;
+		const { attachments: next, errors } = await filesToAttachments(picked, attachments.length);
+		if (errors.length) toast.error(errors[0]);
+		if (next.length) setAttachments((current) => [...current, ...next].slice(0, 4));
+		if (fileInput.current) fileInput.current.value = "";
 	}
 	function openLeads() {
 		setLeadsOpen(true);
@@ -953,59 +1040,108 @@ function Messenger() {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
 						onSubmit,
 						className: "shrink-0 border-t border-border px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-3",
-						children: [visible.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "mb-1.5 flex gap-2 overflow-x-auto px-1 pb-0.5",
-							children: STARTERS.slice(0, 3).map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: busy,
-								onClick: () => onStarter(s.label, s.text),
-								className: "h-8 shrink-0 rounded-full border border-accent/40 px-3 text-xs font-medium text-accent transition-colors duration-150 hover:bg-accent/10 disabled:opacity-40",
-								children: s.label
-							}, s.label))
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-end gap-1.5",
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
-									label: "Account details",
-									onClick: () => setInfoOpen(true),
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { className: "size-6" })
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-									className: "flex min-w-0 flex-1 items-end rounded-full bg-elevated px-4 py-1.5",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
-										ref: ta,
-										rows: 1,
-										value: draft,
-										placeholder: listening ? "Listening…" : "Aa",
-										suppressHydrationWarning: true,
-										onChange: (e) => {
-											setDraft(e.target.value);
-											const el = e.target;
-											el.style.height = "auto";
-											el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-										},
-										onKeyDown: (e) => {
-											if (e.key === "Enter" && !e.shiftKey) {
-												e.preventDefault();
-												onSubmit();
-											}
-										},
-										className: "max-h-28 min-h-9 w-full resize-none bg-transparent py-1.5 text-[0.9375rem] text-fg outline-none placeholder:text-faint"
+						children: [
+							visible.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "mb-1.5 flex gap-2 overflow-x-auto px-1 pb-0.5",
+								children: STARTERS.slice(0, 3).map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: busy,
+									onClick: () => onStarter(s.label, s.text),
+									className: "h-8 shrink-0 rounded-full border border-accent/40 px-3 text-xs font-medium text-accent transition-colors duration-150 hover:bg-accent/10 disabled:opacity-40",
+									children: s.label
+								}, s.label))
+							}),
+							attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "mb-2 flex gap-2 overflow-x-auto px-1",
+								children: attachments.map((file) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "relative shrink-0",
+									children: [file.kind === "image" && file.url ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+										src: file.url,
+										alt: "",
+										className: "size-16 rounded-md object-cover"
+									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "flex h-16 w-28 items-center gap-1.5 rounded-md bg-elevated px-2",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Paperclip, { className: "size-3.5 shrink-0 text-muted" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "truncate text-xs text-fg",
+											children: file.name
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										"aria-label": `Remove ${file.name}`,
+										onClick: () => setAttachments((current) => current.filter((item) => item.id !== file.id)),
+										className: "absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-fg text-bg",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "size-3" })
+									})]
+								}, file.id))
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-end gap-1.5",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
+										label: "Account details",
+										onClick: () => setInfoOpen(true),
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { className: "size-6" })
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "flex min-w-0 flex-1 items-end rounded-full bg-elevated py-1.5 pl-1.5 pr-4",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												"aria-label": "Attach a photo or file",
+												onClick: () => fileInput.current?.click(),
+												className: "flex size-9 shrink-0 items-center justify-center rounded-full text-muted hover:text-fg",
+												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Paperclip, { className: "size-5" })
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+												ref: fileInput,
+												type: "file",
+												multiple: true,
+												accept: "image/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip",
+												className: "hidden",
+												onChange: (e) => void onPickFiles(e.target.files)
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
+												ref: ta,
+												rows: 1,
+												value: draft,
+												placeholder: listening ? "Listening…" : "Aa",
+												suppressHydrationWarning: true,
+												onChange: (e) => {
+													setDraft(e.target.value);
+													const el = e.target;
+													el.style.height = "auto";
+													el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+												},
+												onPaste: (e) => {
+													const pasted = [...e.clipboardData.files];
+													if (!pasted.length) return;
+													e.preventDefault();
+													onPickFiles(pasted);
+												},
+												onKeyDown: (e) => {
+													if (e.key === "Enter" && !e.shiftKey) {
+														e.preventDefault();
+														onSubmit();
+													}
+												},
+												className: "max-h-28 min-h-9 w-full resize-none bg-transparent py-1.5 text-[0.9375rem] text-fg outline-none placeholder:text-faint"
+											})
+										]
+									}),
+									draft.trim() || attachments.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
+										label: "Send",
+										onClick: () => onSubmit(),
+										tone: "accent",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SendHorizontal, { className: "size-5" })
+									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
+										label: listening ? "Stop listening" : "Voice message",
+										onClick: onMicComposer,
+										tone: listening ? "accent" : "plain",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Mic, { className: "size-6" })
 									})
-								}),
-								draft.trim() ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
-									label: "Send",
-									onClick: () => onSubmit(),
-									tone: "accent",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SendHorizontal, { className: "size-5" })
-								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, {
-									label: listening ? "Stop listening" : "Voice message",
-									onClick: onMicComposer,
-									tone: listening ? "accent" : "plain",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Mic, { className: "size-6" })
-								})
-							]
-						})]
+								]
+							})
+						]
 					})
 				]
 			}),
@@ -1223,7 +1359,20 @@ function MessageRow({ msg, showAvatar }) {
 			className: cn("max-w-[min(78%,28rem)]", outgoing && "items-end"),
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: cn("rounded-lg px-3.5 py-2 text-sm leading-snug break-words whitespace-pre-wrap", outgoing ? "rounded-br-sm bg-bubble-out text-accent-fg" : "rounded-bl-sm bg-bubble-in text-fg", msg.error && "bg-danger/20 text-fg"),
-				children: msg.pending ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TypingDots, {}) : msg.content
+				children: msg.pending ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TypingDots, {}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [msg.attachments && msg.attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: cn("flex flex-col gap-1.5", msg.content && "mb-1.5"),
+					children: msg.attachments.map((file) => file.kind === "image" && file.url ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+						src: file.url,
+						alt: file.name,
+						className: "max-h-52 w-full rounded-md object-cover"
+					}, file.id) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+						className: "flex items-center gap-1.5 text-xs",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Paperclip, { className: "size-3.5 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "truncate",
+							children: file.name
+						})]
+					}, file.id))
+				}), msg.content] })
 			}), msg.actions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "mt-1.5 space-y-1.5",
 				children: msg.actions.map((a, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActionChip, {
@@ -1866,8 +2015,9 @@ function InfoPanel({ snapshot, error, wa, studio, leads, leadsError, onClose, on
 		})
 	});
 }
+var routes_exports = /* @__PURE__ */ __exportAll({ component: () => Home });
 function Home() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Messenger, {});
 }
 //#endregion
-export { Home as component };
+export { createSsrRpc as n, routes_exports as t };

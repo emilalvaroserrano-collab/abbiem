@@ -23,6 +23,7 @@ export type AgentAction = {
 export type ChatTurn = {
   role: "user" | "assistant";
   content: string;
+  images?: string[];
 };
 
 export type MemoryUpdate = {
